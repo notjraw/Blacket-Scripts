@@ -3,6 +3,13 @@ const GameResourceManager = (() => {
         delayModifier: 0,
         resourceType: 'blook'
     };
+
+    // Pull log storage
+    const pullLog = {
+        session: [],
+        summary: {}
+    };
+
     const colorShift = (p, c0, c1, l) => {
         let r, g, b, P, f, t, h, i = parseInt, m = Math.round, a = typeof (c1) == "string";
         if (typeof (p) != "number" || p < -1 || p > 1 || typeof (c0) != "string" || (c0[0] != 'r' && c0[0] != '#') || (c1 && !a)) return null;
@@ -28,68 +35,78 @@ const GameResourceManager = (() => {
         if (h) return "rgb" + (f ? "a(" : "(") + r + "," + g + "," + b + (f ? "," + m(a * 1000) / 1000 : "") + ")";
         else return "#" + (4294967296 + r * 16777216 + g * 65536 + b * 256 + (f ? m(a * 255) : 0)).toString(16).slice(1, f ? undefined : -2)
     };
+
     let extra_delay = CONFIG.delayModifier;
     let max_delay = Object.values(blacket.rarities).map(x => x.wait).reduce((curr, prev) => curr > prev ? curr : prev) + extra_delay;
     const rarityOrder = Object.entries(blacket.rarities).sort((a, b) => a[1].exp - b[1].exp).map(x => x[0]);
-    
+
+    // Helper: get rarity of a blook
+    const getBlookRarity = (blookName) => {
+        for (const [rarity, data] of Object.entries(blacket.rarities)) {
+            if (data.blooks && data.blooks.includes(blookName)) return rarity;
+        }
+        return 'Unknown';
+    };
+
+    // Logger: styled console output
+    const logPull = (packName, blookName, pullNum, total) => {
+        const rarity = getBlookRarity(blookName);
+        const rarityColor = blacket.rarities[rarity]?.color || '#ffffff';
+
+        // Track in summary
+        pullLog.session.push({ pack: packName, blook: blookName, rarity, time: new Date().toLocaleTimeString() });
+        pullLog.summary[blookName] = (pullLog.summary[blookName] || 0) + 1;
+
+        console.log(
+            `%c[Jraw's Pack Opener]%c Pack ${pullNum}/${total} | %c${blookName}%c [${rarity}]`,
+            'color: #ff6b6b; font-weight: bold;',
+            'color: #aaaaaa;',
+            `color: ${rarityColor}; font-weight: bold;`,
+            'color: #aaaaaa;'
+        );
+    };
+
+    // Logger: print full session summary
+    const logSummary = (packName, amount) => {
+        console.log('%c━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━', 'color: #ff6b6b;');
+        console.log(`%c[Jraw's Pack Opener] Session Summary — ${amount}x ${packName}`, 'color: #ff6b6b; font-weight: bold; font-size: 13px;');
+        console.log('%c━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━', 'color: #ff6b6b;');
+
+        // Sort by count descending
+        const sorted = Object.entries(pullLog.summary).sort((a, b) => b[1] - a[1]);
+        for (const [blook, count] of sorted) {
+            const rarity = getBlookRarity(blook);
+            const rarityColor = blacket.rarities[rarity]?.color || '#ffffff';
+            console.log(
+                `%c  ${blook}%c x${count} [${rarity}]`,
+                `color: ${rarityColor}; font-weight: bold;`,
+                'color: #cccccc;'
+            );
+        }
+
+        console.log('%c━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━', 'color: #ff6b6b;');
+        console.log('%cScript by Jraw — DM for help cuh 🔥', 'color: #ff6b6b; font-style: italic;');
+        console.log('%c━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━', 'color: #ff6b6b;');
+
+        // Also expose the full log on window for easy copy-paste
+        window._jrawPullLog = pullLog;
+        console.log('%c[Jraw] Full pull log saved to window._jrawPullLog', 'color: #888888; font-style: italic;');
+    };
+
     let openPack = async (pack) => {
         return new Promise((resolve, reject) => {
-            blacket.requests.post("/worker3/open", {
-                pack
-            }, (data) => {
-                if (data.error) reject();
+            blacket.requests.post("/worker3/open", { pack }, (data) => {
+                if (data.error) reject(data.error);
                 resolve(data.blook);
             });
         });
     };
 
-    // Added main function to handle opening multiple packs
     const main = async (pack, amount) => {
-        try {
-            for (let i = 0; i < amount; i++) {
-                const blook = await openPack(pack);
-                console.log(`Opened pack ${i + 1}/${amount}: Received ${blook}`);
-                
-                // Optional: Add a delay between pack openings if needed
-                await new Promise(resolve => setTimeout(resolve, 500));
-            }
-            console.log(`Successfully opened ${amount} ${pack} packs`);
-        } catch (error) {
-            console.error('Error opening packs:', error);
-        }
-    };
+        // Reset log for new session
+        pullLog.session = [];
+        pullLog.summary = {};
 
-    return {
-        openPacks: main
-    };
-})();
-
-// Pack selection
-let packs = Object.keys(blacket.packs);
-let pack;
-do {
-    if (((pack && !packs.includes(pack)) || pack === "")) {
-        pack = packs[Math.floor(Math.random() * packs.length)];
-    }
-    
-    pack = window.prompt("What Pack you finna open (or random):", pack || packs[0]);
-    if (pack === null) break;
-} while(!pack || !packs.includes(pack));
-
-// Amount selection
-let amount;
-let max_packs = Math.floor(blacket.user.tokens / blacket.packs[pack].price);
-do {
-    let suggestedAmount = Math.min(5, max_packs);
-    amount = parseInt(window.prompt(`How Many Packs you finna open  (Recommended: ${suggestedAmount}, Max: ${max_packs})`));
-    
-    if (amount === null) break;
-    
-    if (amount < 1 || amount > max_packs) {
-        amount = Math.min(Math.floor(Math.random() * (max_packs + 1)), max_packs);
-    }
-} while(!amount || amount < 1 || amount > max_packs);
-
-// Open packs if both pack and amount are selected
-if (pack && amount) GameResourceManager.openPacks(pack, amount);
-// Made by Jraw Dm for help cuh
+        console.log('%c━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━', 'color: #ff6b6b;');
+        console.log(`%c[Jraw's Pack Opener] Opening ${amount}x ${pack} packs... 🎴`, 'color: #ff6b6b; font-weight: bold;');
+        console.log('%c━━━━━━━━━━━━━━━━━━━━━
