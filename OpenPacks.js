@@ -1,83 +1,100 @@
-const GameResourceManager = (() => {
-    const CONFIG = {
-        delayModifier: 0,
-        resourceType: 'blook'
-    };
+console.log(`%c
+     ██╗██████╗  █████╗ ██╗    ██╗
+     ██║██╔══██╗██╔══██╗██║    ██║
+     ██║██████╔╝███████║██║ █╗ ██║
+██   ██║██╔══██╗██╔══██║██║███╗██║
+╚█████╔╝██║  ██║██║  ██║╚███╔███╔╝
+ ╚════╝ ╚═╝  ╚═╝╚═╝  ╚═╝ ╚══╝╚══╝
+`, "color:#00cfff;font-family:monospace;font-size:0.85em");
 
-    const colorShift = (p, c0, c1, l) => {
-        let r, g, b, P, f, t, h, i = parseInt, m = Math.round, a = typeof (c1) == "string";
-        if (typeof (p) != "number" || p < -1 || p > 1 || typeof (c0) != "string" || (c0[0] != 'r' && c0[0] != '#') || (c1 && !a)) return null;
-        if (!this.colorShiftHelper) this.colorShiftHelper = (d) => {
-            let n = d.length, x = {};
-            if (n > 9) {
-                [r, g, b, a] = d = d.split(","), n = d.length;
-                if (n < 3 || n > 4) return null;
-                x.r = i(r[3] == "a" ? r.slice(5) : r.slice(4)), x.g = i(g), x.b = i(b), x.a = a ? parseFloat(a) : -1
-            } else {
-                if (n == 8 || n == 6 || n < 4) return null;
-                if (n < 6) d = "#" + d[1] + d[1] + d[2] + d[2] + d[3] + d[3] + (n > 4 ? d[4] + d[4] : "");
-                d = i(d.slice(1), 16);
-                if (n == 9 || n == 5) x.r = d >> 24 & 255, x.g = d >> 16 & 255, x.b = d >> 8 & 255, x.a = m((d & 255) / 0.255) / 1000;
-                else x.r = d >> 16, x.g = d >> 8 & 255, x.b = d & 255, x.a = -1
-            } return x
-        };
-        h = c0.length > 9, h = a ? c1.length > 9 ? true : c1 == "c" ? !h : false : h, f = this.colorShiftHelper(c0), P = p < 0, t = c1 && c1 != "c" ? this.colorShiftHelper(c1) : P ? { r: 0, g: 0, b: 0, a: -1 } : { r: 255, g: 255, b: 255, a: -1 }, p = P ? p * -1 : p, P = 1 - p;
-        if (!f || !t) return null;
-        if (l) r = m(P * f.r + p * t.r), g = m(P * f.g + p * t.g), b = m(P * f.b + p * t.b);
-        else r = m((P * f.r ** 2 + p * t.r ** 2) ** 0.5), g = m((P * f.g ** 2 + p * t.g ** 2) ** 0.5), b = m((P * f.b ** 2 + p * t.b ** 2) ** 0.5);
-        a = f.a, t = t.a, f = a >= 0 || t >= 0, a = f ? a < 0 ? t : t < 0 ? a : a * P + t * p : 0;
-        if (h) return "rgb" + (f ? "a(" : "(") + r + "," + g + "," + b + (f ? "," + m(a * 1000) / 1000 : "") + ")";
-        else return "#" + (4294967296 + r * 16777216 + g * 65536 + b * 256 + (f ? m(a * 255) : 0)).toString(16).slice(1, f ? undefined : -2)
-    };
+const rarityOrder = Object.entries(blacket.rarities)
+  .sort((a, b) => a[1].exp - b[1].exp)
+  .map(x => x[0]);
 
-    let extra_delay = CONFIG.delayModifier;
-    let max_delay = Object.values(blacket.rarities).map(x => x.wait).reduce((curr, prev) => curr > prev ? curr : prev) + extra_delay;
-    const rarityOrder = Object.entries(blacket.rarities).sort((a, b) => a[1].exp - b[1].exp).map(x => x[0]);
+const openPack = pack => new Promise((resolve, reject) => {
+  blacket.requests.post("/worker3/open", { pack }, (data, status) => {
+    if (status && status !== "success") reject(new Error(status));
+    else if (data?.error) reject(new Error(data.error));
+    else if (!data?.blook) reject(new Error("No blook in response"));
+    else resolve(data.blook);
+  });
+});
 
-    let openPack = async (pack) => {
-        return new Promise((resolve, reject) => {
-            blacket.requests.post("/worker3/open", { pack }, (data) => {
-                if (data.error) reject();
-                resolve(data.blook);
-            });
-        });
-    };
+const main = async (pack, amount) => {
+  const pulled = {};
+  const price = blacket.packs[pack].price;
+  const max_delay = Object.values(blacket.rarities).map(r => r.wait).reduce((a, b) => Math.max(a, b));
+  let opened = 0, spent = 0, bestRarity = null, retries = 0;
+  const MAX_RETRIES = 5;
 
-    const main = async (pack, amount) => {
-        try {
-            for (let i = 0; i < amount; i++) {
-                const blook = await openPack(pack);
-                console.log(`Opened pack ${i + 1}/${amount}: Received ${blook}`);
-                await new Promise(resolve => setTimeout(resolve, 500));
-            }
-            console.log(`Successfully opened ${amount} ${pack} packs`);
-        } catch (error) {
-            console.error('Error opening packs:', error);
-        }
-    };
+  console.log(`%cStarting: ${pack} x${amount}`, "color:#00cfff;font-weight:bold;font-family:monospace");
 
-    return { openPacks: main };
-})();
+  for (let i = 0; i < amount; i++) {
+    try {
+      const blook = await openPack(pack);
+      const rarity = blacket.blooks[blook].rarity;
+      const rData = blacket.rarities[rarity];
+      const color = rData.color;
+
+      blacket.user.tokens -= price;
+      spent += price;
+      opened++;
+      retries = 0;
+
+      pulled[blook] = (pulled[blook] || 0) + 1;
+
+      if (!bestRarity || rData.exp > blacket.rarities[bestRarity].exp)
+        bestRarity = rarity;
+
+      console.log(
+        `%c[${opened}/${amount}] ${blook} (${rarity}) | Spent: ${spent.toLocaleString()} | Left: ${blacket.user.tokens.toLocaleString()}`,
+        `color:${color};font-family:monospace;font-size:1.1em`
+      );
+
+      await new Promise(r => setTimeout(r, rData.wait));
+    } catch (err) {
+      retries++;
+      if (retries > MAX_RETRIES) {
+        console.error(`%cFailed ${MAX_RETRIES} times — aborting.`, "color:red;font-family:monospace");
+        break;
+      }
+      const backoff = max_delay * 2 ** retries;
+      console.warn(`%cError (${retries}/${MAX_RETRIES}), backing off ${backoff}ms: ${err.message}`, "color:orange;font-family:monospace");
+      await new Promise(r => setTimeout(r, backoff));
+      i--;
+    }
+  }
+
+  console.log("%c\n— OPENING COMPLETE —", "color:#00cfff;font-size:2em;font-weight:bold;font-family:monospace");
+  console.log(`%cOpened: ${opened} | Spent: ${spent.toLocaleString()} | Left: ${blacket.user.tokens.toLocaleString()} | Best: ${bestRarity}`, "color:#aaa;font-family:monospace");
+  console.log("%c\nPULL SUMMARY", "color:#00cfff;font-weight:bold;font-family:monospace;font-size:1.3em");
+
+  Object.keys(pulled)
+    .sort((a, b) => rarityOrder.indexOf(blacket.blooks[a].rarity) - rarityOrder.indexOf(blacket.blooks[b].rarity))
+    .forEach(blook => {
+      const rarity = blacket.blooks[blook].rarity;
+      const color = blacket.rarities[rarity].color;
+      console.log(`%c${blook} x${pulled[blook]} [${rarity}]`, `color:${color};font-size:1.4em;font-family:monospace`);
+    });
+
+  console.log("%c\n— Made by Jraw —", "color:#00cfff;font-style:italic;font-family:monospace");
+};
 
 let packs = Object.keys(blacket.packs);
 let pack;
 do {
-    if (((pack && !packs.includes(pack)) || pack === "")) {
-        pack = packs[Math.floor(Math.random() * packs.length)];
-    }
-    pack = window.prompt("What Pack you finna open (or random):", pack || packs[0]);
-    if (pack === null) break;
-} while (!pack || !packs.includes(pack));
+  const input = prompt("What pack you finna open:", packs[0]);
+  if (input === null) { console.log("%cCancelled.", "color:red"); throw ""; }
+  pack = packs.find(p => p.toLowerCase() === input.toLowerCase());
+} while (!pack);
 
 let amount;
-let max_packs = Math.floor(blacket.user.tokens / blacket.packs[pack].price);
+const max = Math.floor(blacket.user.tokens / blacket.packs[pack].price);
 do {
-    let suggestedAmount = Math.min(5, max_packs);
-    amount = parseInt(window.prompt(`How Many Packs you finna open (Recommended: ${suggestedAmount}, Max: ${max_packs})`));
-    if (amount === null) break;
-    if (amount < 1 || amount > max_packs) {
-        amount = Math.min(Math.floor(Math.random() * (max_packs + 1)), max_packs);
-    }
-} while (!amount || amount < 1 || amount > max_packs);
+  const input = prompt(`How many packs you finna open (Max: ${max}):`);
+  if (input === null) { console.log("%cCancelled.", "color:red"); throw ""; }
+  amount = parseInt(input);
+} while (!amount || amount < 1 || amount > max);
 
-if (pack && amount) GameResourceManager.openPacks(pack, amount);
+main(pack, amount);
+// Jraw
