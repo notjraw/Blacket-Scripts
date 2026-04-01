@@ -3,6 +3,7 @@ const GameResourceManager = (() => {
         delayModifier: 0,
         resourceType: 'blook'
     };
+
     const colorShift = (p, c0, c1, l) => {
         let r, g, b, P, f, t, h, i = parseInt, m = Math.round, a = typeof (c1) == "string";
         if (typeof (p) != "number" || p < -1 || p > 1 || typeof (c0) != "string" || (c0[0] != 'r' && c0[0] != '#') || (c1 && !a)) return null;
@@ -28,29 +29,25 @@ const GameResourceManager = (() => {
         if (h) return "rgb" + (f ? "a(" : "(") + r + "," + g + "," + b + (f ? "," + m(a * 1000) / 1000 : "") + ")";
         else return "#" + (4294967296 + r * 16777216 + g * 65536 + b * 256 + (f ? m(a * 255) : 0)).toString(16).slice(1, f ? undefined : -2)
     };
+
     let extra_delay = CONFIG.delayModifier;
     let max_delay = Object.values(blacket.rarities).map(x => x.wait).reduce((curr, prev) => curr > prev ? curr : prev) + extra_delay;
     const rarityOrder = Object.entries(blacket.rarities).sort((a, b) => a[1].exp - b[1].exp).map(x => x[0]);
-    
+
     let openPack = async (pack) => {
         return new Promise((resolve, reject) => {
-            blacket.requests.post("/worker3/open", {
-                pack
-            }, (data) => {
+            blacket.requests.post("/worker3/open", { pack }, (data) => {
                 if (data.error) reject();
                 resolve(data.blook);
             });
         });
     };
 
-    // Added main function to handle opening multiple packs
     const main = async (pack, amount) => {
         try {
             for (let i = 0; i < amount; i++) {
                 const blook = await openPack(pack);
                 console.log(`Opened pack ${i + 1}/${amount}: Received ${blook}`);
-                
-                // Optional: Add a delay between pack openings if needed
                 await new Promise(resolve => setTimeout(resolve, 500));
             }
             console.log(`Successfully opened ${amount} ${pack} packs`);
@@ -59,37 +56,28 @@ const GameResourceManager = (() => {
         }
     };
 
-    return {
-        openPacks: main
-    };
+    return { openPacks: main };
 })();
 
-// Pack selection
 let packs = Object.keys(blacket.packs);
 let pack;
 do {
     if (((pack && !packs.includes(pack)) || pack === "")) {
         pack = packs[Math.floor(Math.random() * packs.length)];
     }
-    
     pack = window.prompt("What Pack you finna open (or random):", pack || packs[0]);
     if (pack === null) break;
-} while(!pack || !packs.includes(pack));
+} while (!pack || !packs.includes(pack));
 
-// Amount selection
 let amount;
 let max_packs = Math.floor(blacket.user.tokens / blacket.packs[pack].price);
 do {
     let suggestedAmount = Math.min(5, max_packs);
-    amount = parseInt(window.prompt(`How Many Packs you finna open  (Recommended: ${suggestedAmount}, Max: ${max_packs})`));
-    
+    amount = parseInt(window.prompt(`How Many Packs you finna open (Recommended: ${suggestedAmount}, Max: ${max_packs})`));
     if (amount === null) break;
-    
     if (amount < 1 || amount > max_packs) {
         amount = Math.min(Math.floor(Math.random() * (max_packs + 1)), max_packs);
     }
-} while(!amount || amount < 1 || amount > max_packs);
+} while (!amount || amount < 1 || amount > max_packs);
 
-// Open packs if both pack and amount are selected
 if (pack && amount) GameResourceManager.openPacks(pack, amount);
-// Made by Jraw Dm for help cuh
